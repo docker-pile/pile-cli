@@ -71,6 +71,16 @@ func status(cmd *cobra.Command, args []string) {
 	_ = runCommand("docker ps --no-trunc --format \"table {{.Names}}\t{{.State}}\"")
 }
 
+func images(cmd *cobra.Command, args []string) {
+	_ = runCommand("docker ps --no-trunc --format \"table {{.Names}}\t{{.Image}}\"")
+}
+func ports(cmd *cobra.Command, args []string) {
+	_ = runCommand("docker ps --no-trunc --format \"table {{.Names}}\t{{.Ports}}\"")
+}
+func commands(cmd *cobra.Command, args []string) {
+	_ = runCommand("docker ps --no-trunc --format \"table {{.Names}}\t{{.Command}}\"")
+}
+
 func logs(cmd *cobra.Command, args []string) {
 	if len(args) < 1 {
 		fmt.Println("Please specify an app name")
@@ -132,6 +142,11 @@ func main() {
 	rootCmd.AddCommand(&cobra.Command{Use: "app-up", Run: appUp})
 	rootCmd.AddCommand(&cobra.Command{Use: "app-down", Run: appDown})
 	rootCmd.AddCommand(&cobra.Command{Use: "status", Run: status})
+	rootCmd.AddCommand(&cobra.Command{Use: "state", Run: status})
+	rootCmd.AddCommand(&cobra.Command{Use: "ps", Run: status})
+	rootCmd.AddCommand(&cobra.Command{Use: "ports", Run: ports})
+	rootCmd.AddCommand(&cobra.Command{Use: "images", Run: images})
+	rootCmd.AddCommand(&cobra.Command{Use: "commands", Run: commands})
 	rootCmd.AddCommand(&cobra.Command{Use: "logs", Run: logs})
 	rootCmd.AddCommand(&cobra.Command{Use: "logs-db", Run: logsDb})
 	rootCmd.AddCommand(&cobra.Command{Use: "restart-app", Run: restartApp})
