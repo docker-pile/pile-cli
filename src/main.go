@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -62,6 +62,9 @@ func constructFileFlags(items []string) string {
 	return strings.Join(files, " ")
 }
 
+// APPS:
+//   - open-webui
+
 func writePileNetworkConfig() error {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
@@ -85,6 +88,29 @@ func writePileNetworkConfig() error {
 	}
 
 	fmt.Println("✅ Successfully wrote pile.network.yaml to", pileNetworkPath)
+	return nil
+}
+
+func writePileGroupsConfig() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("error getting home directory: %w", err)
+	}
+
+	pileNetworkPath := filepath.Join(homeDir, "pile", "pile.config.yaml")
+
+	content := `APPS:
+  - open-webui
+`
+	if err := os.MkdirAll(filepath.Dir(pileNetworkPath), 0755); err != nil {
+		return fmt.Errorf("error creating pile directory: %w", err)
+	}
+
+	if err := os.WriteFile(pileNetworkPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("error writing pile.config.yaml: %w", err)
+	}
+
+	fmt.Println("✅ Successfully wrote pile.config.yaml to", pileNetworkPath)
 	return nil
 }
 
@@ -135,6 +161,7 @@ func initCmd(cmd *cobra.Command, args []string) {
 		fmt.Println("Created directory:", pilePath)
 	}
 	writePileNetworkConfig()
+	writePileGroupsConfig()
 }
 
 func logs(cmd *cobra.Command, args []string) {
@@ -231,7 +258,7 @@ func copyDir(src string, dest string) error {
 		return err
 	}
 
-	entries, err := ioutil.ReadDir(src)
+	entries, err := os.ReadDir(src)
 	if err != nil {
 		return err
 	}
@@ -265,12 +292,7 @@ func copyFile(src, dest string) error {
 		return err
 	}
 	defer destFile.Close()
-
-	_, err = ioutil.ReadAll(srcFile)
-	if err != nil {
-		return err
-	}
-	_, err = destFile.Write([]byte{})
+	_, err = io.Copy(destFile, srcFile)
 	return err
 }
 
