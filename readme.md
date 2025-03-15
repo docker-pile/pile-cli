@@ -1,4 +1,10 @@
-## development
+## Brew Instillation
+```
+brew cask add docker-pile/pile-cli && \
+brew install pile
+```
+
+### development
 install dependencies
 ```
 go mod init pile-cli
@@ -8,13 +14,20 @@ go get github.com/spf13/cobra
 ```
 
 
-## init directory
-$HOME/pile/pile.env
-$HOME/pile/.tmux.conf
-$HOME/pile/beaver/beaver.yaml
-$HOME/pile/jwtio/jwtio.yaml
+### init directory
+```
+$HOME/pile/
+$HOME/pile/pile.config.yaml
+$HOME/pile/pile.network.yaml
+```
+`pile install postgres` will result in creating this `docker compose` file.
+```
+$HOME/pile/postgres/compose.yaml
+```
 
-## Cli Interface
+### Cli Interface
+some of these are a work in progress. i put them here for my references during development.
+```
 pile init
 pile edit <service-name>
 pile env
@@ -31,9 +44,19 @@ pile status/ps
 pile commands
 pile ports
 pile images
-
+```
 
 ## pile.env
+now:
+```
+APPS:
+  - open-webui
+  - postgres
+  - wordpress
+
+```
+future:
+```
 install: postgres mysql redis open-webui beaver
 
 groups:
@@ -47,6 +70,7 @@ groups:
     oneimaging
   utils:
     beaver
+```
 
 install:
   mongo
