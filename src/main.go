@@ -296,12 +296,34 @@ func copyFile(src, dest string) error {
 	return err
 }
 
+func configEdit(cmd *cobra.Command, args []string) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	pileConfig := filepath.Join(homeDir, "pile", "pile.config.yaml")
+	configCommand := fmt.Sprintf("vi %s", pileConfig)
+	_ = runCommand(configCommand)
+}
+
+func envEdit(cmd *cobra.Command, args []string) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	pileConfig := filepath.Join(homeDir, "pile", ".env")
+	configCommand := fmt.Sprintf("vi %s", pileConfig)
+	_ = runCommand(configCommand)
+}
+
 func main() {
 	// pile commands
 	rootCmd.AddCommand(&cobra.Command{Use: "init", Run: initCmd})
 	rootCmd.AddCommand(&cobra.Command{Use: "up", Run: pileUp})
 	rootCmd.AddCommand(&cobra.Command{Use: "down", Run: pileDown})
 	rootCmd.AddCommand(&cobra.Command{Use: "install", Run: install})
+	rootCmd.AddCommand(&cobra.Command{Use: "config", Run: configEdit})
+	rootCmd.AddCommand(&cobra.Command{Use: "env", Run: envEdit})
 	// docker shortcut commands
 	rootCmd.AddCommand(&cobra.Command{Use: "logs", Run: logs})
 	rootCmd.AddCommand(&cobra.Command{Use: "status", Run: status})
