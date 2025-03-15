@@ -7,9 +7,12 @@ brew install pile
 ### development
 install dependencies
 ```
+cd pile-cli/src
 go mod init pile-cli
 go get github.com/spf13/cobra
-
+```
+build it for 3 architectures
+```
 ./build.sh
 ```
 
