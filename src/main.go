@@ -1,35 +1,91 @@
 package main
 
 import (
-	// "bufio"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "cli",
-	Short: "Docker management CLI",
+	Use:   "pile",
+	Short: "Docker Compose Wrangler",
 }
 
-func readEnvVar(varName string) ([]string, error) {
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("if [ -f 'pile.env' ]; then yq '.%s' pile.env; fi", varName))
-	output, err := cmd.Output()
+type PileConfig struct {
+	APPS []string `yaml:"APPS"`
+	DBS  []string `yaml:"DBS"`
+}
+
+func readPileConfig() (*PileConfig, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, err
 	}
-	return strings.Fields(strings.TrimSpace(string(output))), nil
+	pilePath := filepath.Join(homeDir, "pile", "pile.config.yaml")
+	file, err := os.Open(pilePath)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	decoder := yaml.NewDecoder(file)
+	var config PileConfig
+
+	if err := decoder.Decode(&config); err != nil {
+		return nil, err
+	}
+
+	return &config, nil
 }
 
-func constructFileFlags(prefix, folder string, items []string) string {
+func constructFileFlags(items []string) string {
 	var files []string
 	for _, item := range items {
-		files = append(files, fmt.Sprintf("-f %s/%s/%s.yaml", folder, item, item))
+		if strings.ContainsAny(item, "&|;><$") {
+			continue // Prevent command injection
+		}
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return err.Error()
+		}
+		pileDir := filepath.Join(homeDir, "pile")
+		files = append(files, fmt.Sprintf("-f %s/%s/compose.yaml", pileDir, item))
 	}
 	return strings.Join(files, " ")
+}
+
+func writePileNetworkConfig() error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("error getting home directory: %w", err)
+	}
+
+	pileNetworkPath := filepath.Join(homeDir, "pile", "pile.network.yaml")
+
+	content := `networks:
+  pile:
+    name: pile  # Explicitly name the network
+    driver: bridge # Use bridge network (default)
+  `
+
+	if err := os.MkdirAll(filepath.Dir(pileNetworkPath), 0755); err != nil {
+		return fmt.Errorf("error creating pile directory: %w", err)
+	}
+
+	if err := os.WriteFile(pileNetworkPath, []byte(content), 0644); err != nil {
+		return fmt.Errorf("error writing pile.network.yaml: %w", err)
+	}
+
+	fmt.Println("✅ Successfully wrote pile.network.yaml to", pileNetworkPath)
+	return nil
 }
 
 func runCommand(cmdString string) error {
@@ -40,31 +96,67 @@ func runCommand(cmdString string) error {
 }
 
 func dbUp(cmd *cobra.Command, args []string) {
-	dbFiles, _ := readEnvVar("DBS")
-	files := constructFileFlags("db", "db", dbFiles)
+	config, _ := readPileConfig()
+	files := constructFileFlags(config.DBS)
 	cmdString := fmt.Sprintf("docker compose -f db/db.yaml %s up -d --remove-orphans", files)
 	_ = runCommand(cmdString)
 }
 
 func dbDown(cmd *cobra.Command, args []string) {
-	dbFiles, _ := readEnvVar("DBS")
-	files := constructFileFlags("db", "db", dbFiles)
+	config, _ := readPileConfig()
+	files := constructFileFlags(config.DBS)
 	cmdString := fmt.Sprintf("docker compose -f db/db.yaml %s down", files)
 	_ = runCommand(cmdString)
 }
 
 func appUp(cmd *cobra.Command, args []string) {
-	appFiles, _ := readEnvVar("APPS")
-	files := constructFileFlags("app", "app", appFiles)
-	cmdString := fmt.Sprintf("docker compose -f app/app.yaml %s up -d --remove-orphans", files)
+	config, _ := readPileConfig()
+	fmt.Println("Config APPS:", config.APPS)
+	files := constructFileFlags(config.APPS)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	pileNetwork := filepath.Join(homeDir, "pile", "pile.network.yaml")
+
+	cmdString := fmt.Sprintf("docker compose -f %s %s up -d --remove-orphans", pileNetwork, files)
 	_ = runCommand(cmdString)
 }
 
 func appDown(cmd *cobra.Command, args []string) {
-	appFiles, _ := readEnvVar("APPS")
-	files := constructFileFlags("app", "app", appFiles)
-	cmdString := fmt.Sprintf("docker compose -f app/app.yaml %s down", files)
+	config, _ := readPileConfig()
+	files := constructFileFlags(config.APPS)
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+	pileNetwork := filepath.Join(homeDir, "pile", "pile.network.yaml")
+
+	cmdString := fmt.Sprintf("docker compose -f %s %s down", pileNetwork, files)
 	_ = runCommand(cmdString)
+}
+
+func initCmd(cmd *cobra.Command, args []string) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println("Error getting home directory:", err)
+		return
+	}
+	pilePath := filepath.Join(homeDir, "pile")
+	if err := os.MkdirAll(pilePath, 0755); err != nil {
+		fmt.Println("Error creating pile directory:", err)
+	} else {
+		fmt.Println("Created directory:", pilePath)
+	}
+	writePileNetworkConfig()
+}
+
+func logs(cmd *cobra.Command, args []string) {
+	if len(args) < 1 {
+		fmt.Println("Please specify an app name")
+		return
+	}
+	_ = runCommand(fmt.Sprintf("docker logs -f pile-%s-1", args[0]))
 }
 
 func status(cmd *cobra.Command, args []string) {
@@ -81,78 +173,135 @@ func commands(cmd *cobra.Command, args []string) {
 	_ = runCommand("docker ps --no-trunc --format \"table {{.Names}}\t{{.Command}}\"")
 }
 
-func logs(cmd *cobra.Command, args []string) {
+func install(cmd *cobra.Command, args []string) {
 	if len(args) < 1 {
-		fmt.Println("Please specify an app name")
+		fmt.Println("Please specify a pile to clone")
 		return
 	}
-	_ = runCommand(fmt.Sprintf("docker logs -f app-%s-1", args[0]))
-}
-
-func logsDb(cmd *cobra.Command, args []string) {
-	if len(args) < 1 {
-		fmt.Println("Please specify a database name")
-		return
-	}
-	_ = runCommand(fmt.Sprintf("docker logs -f db-%s-1", args[0]))
-}
-
-func restartApp(cmd *cobra.Command, args []string) {
-	if len(args) < 1 {
-		fmt.Println("Please specify an app name")
-		return
-	}
-	_ = runCommand(fmt.Sprintf("docker restart app-%s-1", args[0]))
-}
-
-func envEdit(cmd *cobra.Command, args []string) {
-	_ = runCommand("vi pile.env")
-}
-
-func up(cmd *cobra.Command, args []string) {
-	dbUp(cmd, args)
-	_ = runCommand("sleep 3")
-	appUp(cmd, args)
-	status(cmd, args)
-}
-
-func down(cmd *cobra.Command, args []string) {
-	appDown(cmd, args)
-	dbDown(cmd, args)
-	_ = runCommand("docker ps")
-}
-
-func initCmd(cmd *cobra.Command, args []string) {
+	clonePile := args[0]
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		fmt.Println("Error getting home directory:", err)
 		return
 	}
-	pilePath := homeDir + "/pile"
-	if err := os.MkdirAll(pilePath, 0755); err != nil {
+
+	// Define paths
+	pileDir := filepath.Join(homeDir, "pile")
+	testDestDir := filepath.Join(pileDir, clonePile)
+	repoURL := "https://github.com/docker-pile/pile-library.git"
+	tempDir := filepath.Join(os.TempDir(), "pile-library")
+
+	// Ensure ~/pile directory exists
+	if err := os.MkdirAll(pileDir, 0755); err != nil {
 		fmt.Println("Error creating pile directory:", err)
-	} else {
-		fmt.Println("Created directory:", pilePath)
+		return
 	}
+
+	// Clone repository using go-git
+	fmt.Println("Cloning repository...")
+	repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{
+		URL:           repoURL,
+		Depth:         1, // Shallow clone
+		SingleBranch:  true,
+		ReferenceName: plumbing.NewBranchReferenceName("main"),
+	})
+	if err != nil {
+		fmt.Println("Error cloning repository:", err)
+		return
+	}
+
+	// Verify repository
+	if repo == nil {
+		fmt.Println("Error: repository not cloned properly")
+		return
+	}
+
+	// Define source test directory from cloned repo
+	testSrcDir := filepath.Join(tempDir, clonePile)
+
+	// Ensure source directory exists
+	if _, err := os.Stat(testSrcDir); os.IsNotExist(err) {
+		fmt.Println("Error: 'test' directory not found in repository")
+		return
+	}
+
+	// Copy files from cloned repo to ~/pile/test
+	fmt.Println("Copying test directory to", testDestDir)
+	if err := copyDir(testSrcDir, testDestDir); err != nil {
+		fmt.Println("Error copying files:", err)
+		return
+	}
+
+	// Cleanup: Remove temporary cloned repo
+	fmt.Println("Cleaning up...")
+	os.RemoveAll(tempDir)
+
+	fmt.Println("✅ Successfully copied test directory to", testDestDir)
+}
+
+// copyDir recursively copies a directory and its contents
+func copyDir(src string, dest string) error {
+	if err := os.MkdirAll(dest, 0755); err != nil {
+		return err
+	}
+
+	entries, err := ioutil.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		destPath := filepath.Join(dest, entry.Name())
+
+		if entry.IsDir() {
+			if err := copyDir(srcPath, destPath); err != nil {
+				return err
+			}
+		} else {
+			if err := copyFile(srcPath, destPath); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// copyFile copies a single file from src to dest
+func copyFile(src, dest string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+	destFile, err := os.Create(dest)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = ioutil.ReadAll(srcFile)
+	if err != nil {
+		return err
+	}
+	_, err = destFile.Write([]byte{})
+	return err
 }
 
 func main() {
-	rootCmd.AddCommand(&cobra.Command{Use: "db-up", Run: dbUp})
-	rootCmd.AddCommand(&cobra.Command{Use: "db-down", Run: dbDown})
-	rootCmd.AddCommand(&cobra.Command{Use: "app-up", Run: appUp})
-	rootCmd.AddCommand(&cobra.Command{Use: "app-down", Run: appDown})
+	rootCmd.AddCommand(&cobra.Command{Use: "init", Run: initCmd})
+	rootCmd.AddCommand(&cobra.Command{Use: "logs", Run: logs})
 	rootCmd.AddCommand(&cobra.Command{Use: "status", Run: status})
 	rootCmd.AddCommand(&cobra.Command{Use: "state", Run: status})
 	rootCmd.AddCommand(&cobra.Command{Use: "ps", Run: status})
 	rootCmd.AddCommand(&cobra.Command{Use: "ports", Run: ports})
 	rootCmd.AddCommand(&cobra.Command{Use: "images", Run: images})
 	rootCmd.AddCommand(&cobra.Command{Use: "commands", Run: commands})
-	rootCmd.AddCommand(&cobra.Command{Use: "logs", Run: logs})
-	rootCmd.AddCommand(&cobra.Command{Use: "logs-db", Run: logsDb})
-	rootCmd.AddCommand(&cobra.Command{Use: "restart-app", Run: restartApp})
-	rootCmd.AddCommand(&cobra.Command{Use: "env", Run: envEdit})
-	rootCmd.AddCommand(&cobra.Command{Use: "up", Run: up})
-	rootCmd.AddCommand(&cobra.Command{Use: "down", Run: down})
-	rootCmd.AddCommand(&cobra.Command{Use: "init", Run: initCmd})
+	rootCmd.AddCommand(&cobra.Command{Use: "install", Run: install})
+
+	rootCmd.AddCommand(&cobra.Command{Use: "db-up", Run: dbUp})
+	rootCmd.AddCommand(&cobra.Command{Use: "db-down", Run: dbDown})
+	rootCmd.AddCommand(&cobra.Command{Use: "app-up", Run: appUp})
+	rootCmd.AddCommand(&cobra.Command{Use: "app-down", Run: appDown})
 	rootCmd.Execute()
 }
