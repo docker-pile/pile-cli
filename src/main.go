@@ -95,21 +95,7 @@ func runCommand(cmdString string) error {
 	return cmd.Run()
 }
 
-func dbUp(cmd *cobra.Command, args []string) {
-	config, _ := readPileConfig()
-	files := constructFileFlags(config.DBS)
-	cmdString := fmt.Sprintf("docker compose -f db/db.yaml %s up -d --remove-orphans", files)
-	_ = runCommand(cmdString)
-}
-
-func dbDown(cmd *cobra.Command, args []string) {
-	config, _ := readPileConfig()
-	files := constructFileFlags(config.DBS)
-	cmdString := fmt.Sprintf("docker compose -f db/db.yaml %s down", files)
-	_ = runCommand(cmdString)
-}
-
-func appUp(cmd *cobra.Command, args []string) {
+func pileUp(cmd *cobra.Command, args []string) {
 	config, _ := readPileConfig()
 	fmt.Println("Config APPS:", config.APPS)
 	files := constructFileFlags(config.APPS)
@@ -123,7 +109,7 @@ func appUp(cmd *cobra.Command, args []string) {
 	_ = runCommand(cmdString)
 }
 
-func appDown(cmd *cobra.Command, args []string) {
+func pileDown(cmd *cobra.Command, args []string) {
 	config, _ := readPileConfig()
 	files := constructFileFlags(config.APPS)
 	homeDir, err := os.UserHomeDir()
@@ -289,7 +275,12 @@ func copyFile(src, dest string) error {
 }
 
 func main() {
+	// pile commands
 	rootCmd.AddCommand(&cobra.Command{Use: "init", Run: initCmd})
+	rootCmd.AddCommand(&cobra.Command{Use: "up", Run: pileUp})
+	rootCmd.AddCommand(&cobra.Command{Use: "down", Run: pileDown})
+	rootCmd.AddCommand(&cobra.Command{Use: "install", Run: install})
+	// docker shortcut commands
 	rootCmd.AddCommand(&cobra.Command{Use: "logs", Run: logs})
 	rootCmd.AddCommand(&cobra.Command{Use: "status", Run: status})
 	rootCmd.AddCommand(&cobra.Command{Use: "state", Run: status})
@@ -297,11 +288,5 @@ func main() {
 	rootCmd.AddCommand(&cobra.Command{Use: "ports", Run: ports})
 	rootCmd.AddCommand(&cobra.Command{Use: "images", Run: images})
 	rootCmd.AddCommand(&cobra.Command{Use: "commands", Run: commands})
-	rootCmd.AddCommand(&cobra.Command{Use: "install", Run: install})
-
-	rootCmd.AddCommand(&cobra.Command{Use: "db-up", Run: dbUp})
-	rootCmd.AddCommand(&cobra.Command{Use: "db-down", Run: dbDown})
-	rootCmd.AddCommand(&cobra.Command{Use: "app-up", Run: appUp})
-	rootCmd.AddCommand(&cobra.Command{Use: "app-down", Run: appDown})
 	rootCmd.Execute()
 }
