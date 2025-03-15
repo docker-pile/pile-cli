@@ -200,7 +200,7 @@ func install(cmd *cobra.Command, args []string) {
 
 	// Define paths
 	pileDir := filepath.Join(homeDir, "pile")
-	testDestDir := filepath.Join(pileDir, clonePile)
+	serviceDestDir := filepath.Join(pileDir, clonePile)
 	repoURL := "https://github.com/docker-pile/pile-library.git"
 	tempDir := filepath.Join(os.TempDir(), "pile-library")
 
@@ -211,7 +211,7 @@ func install(cmd *cobra.Command, args []string) {
 	}
 
 	// Clone repository using go-git
-	fmt.Println("Cloning repository...")
+	// fmt.Println("Cloning repository...")
 	repo, err := git.PlainClone(tempDir, false, &git.CloneOptions{
 		URL:           repoURL,
 		Depth:         1, // Shallow clone
@@ -230,26 +230,30 @@ func install(cmd *cobra.Command, args []string) {
 	}
 
 	// Define source test directory from cloned repo
-	testSrcDir := filepath.Join(tempDir, clonePile)
+	serviceSrcDir := filepath.Join(tempDir, clonePile)
 
 	// Ensure source directory exists
-	if _, err := os.Stat(testSrcDir); os.IsNotExist(err) {
-		fmt.Println("Error: 'test' directory not found in repository")
+	if _, err := os.Stat(serviceSrcDir); os.IsNotExist(err) {
+		fmt.Println("Pile: ", clonePile, "not found in pile-library")
+		// fmt.Println("Cleaning up...")
+		os.RemoveAll(tempDir)
 		return
 	}
 
 	// Copy files from cloned repo to ~/pile/test
-	fmt.Println("Copying test directory to", testDestDir)
-	if err := copyDir(testSrcDir, testDestDir); err != nil {
+	// fmt.Println("Copying test directory to", serviceDestDir)
+	if err := copyDir(serviceSrcDir, serviceDestDir); err != nil {
 		fmt.Println("Error copying files:", err)
+		// fmt.Println("Cleaning up...")
+		os.RemoveAll(tempDir)
 		return
 	}
 
 	// Cleanup: Remove temporary cloned repo
-	fmt.Println("Cleaning up...")
+	// fmt.Println("Cleaning up...")
 	os.RemoveAll(tempDir)
 
-	fmt.Println("✅ Successfully copied test directory to", testDestDir)
+	fmt.Println("✅ Successfully coppied pile-library to ", serviceDestDir)
 }
 
 // copyDir recursively copies a directory and its contents
